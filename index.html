@@ -1,0 +1,244 @@
+<html>
+  <head>
+    <script
+      src="https://unpkg.com/react@16/umd/react.development.js"
+      crossorigin
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@16/umd/react-dom.development.js"
+      crossorigin
+    ></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.19.0/axios.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-router-dom/5.0.1/react-router-dom.js"></script>
+    <style>
+      body {
+        font-family: verdana;
+      }
+      nav {
+        display: flex;
+        justify-content: space-around;
+      }
+
+      .selected {
+        background-color: tomato;
+        color: white;
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+      }
+
+      input,
+      button {
+        height: 2rem;
+        font-size: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      const API = "https://acme-users-api-rev.herokuapp.com/api"
+
+      // returns a promise for a 'logged-in' user
+      const fetchUser = async () => {
+        const storage = window.localStorage
+        const userId = storage.getItem("userId")
+        if (userId) {
+          try {
+            return (await axios.get(`${API}/users/detail/${userId}`)).data
+          } catch (ex) {
+            storage.removeItem("userId")
+            return fetchUser()
+          }
+        }
+        const user = (await axios.get(`${API}/users/random`)).data
+        storage.setItem("userId", user.id)
+        return user
+      }
+
+      // let's deconstruct some things out for later use
+      const { render } = ReactDOM
+      const { Component } = React
+      const { HashRouter, Route, Link, Switch, Redirect } = ReactRouterDOM
+
+      // should:
+      //  - render ALL the notes according to the requested archived flag prop
+      //  - for each note:
+      //    - render the text and 2 buttons
+      //    - one to archive or unarchive depending on current state of note
+      //    - one to delete the note entirely
+      // use the functions created in App to modify the note
+      const Notes = ({ notes, archived, update, destroy }) => {
+        const findNote = (arg) => notes.find(note => note.id === arg.id)
+        const archivedNotes = notes.filter(note => note.archived).map(note => <li key={note.id}><p>{note.text}</p> <button onClick={() => { note.archived = !note.archived; update(findNote(note))}}>Unarchive</button> <button onClick={()=> destroy(note)}>Destroy</button></li>)
+        const unarchivedNotes  = notes.filter(note => !note.archived).map(note => <li key={note.id}><p>{note.text}</p> <button onClick={() => { note.archived = !note.archived; update(findNote(note))}}>Archive</button> <button onClick={()=> destroy(note)}>Destroy</button></li>)
+        return (
+
+            <ul>
+                {archived ? archivedNotes : unarchivedNotes}
+            </ul>
+        )
+      }
+
+      // this part is done for you!
+      // take a look at how some of it is done and be sure you can explain everything
+      const Nav = ({ path, notes }) => {
+        const archived = notes.filter(note => note.archived)
+        return (
+          <nav>
+            <Link to="/notes" className={path === "/notes" ? "selected" : ""}>
+              Notes ({notes.length - archived.length})
+            </Link>
+            <Link
+              to="/archived"
+              className={path === "/archived" ? "selected" : ""}
+            >
+              Archived ({archived.length})
+            </Link>
+            <Link
+              to="/notes/create"
+              className={path === "/notes/create" ? "selected" : ""}
+            >
+              Create
+            </Link>
+          </nav>
+        )
+      }
+
+      // this component should have some state to control what the user is typing
+      // and eventually use the create function that's passed down
+      // to create a note for a user!
+      // upon successfully creating the note,
+      // redirect them to the /notes page by using the history prop that's passed down
+      class Create extends Component {
+        constructor() {
+          super()
+            this.state = {
+                text: ''
+            },
+          this.create = this.create.bind(this)
+        }
+
+        create() {
+            this.props.create(this.state.text);
+        }
+        render() {
+          return (
+            <div>
+                <input type="text" value={this.state.text} onChange={(ev) => {this.setState({text: ev.target.value})}}></input>
+                <button onClick={this.create}>Create</button>
+            </div>
+          )
+        }
+      }
+
+      class App extends Component {
+        constructor() {
+          super()
+          // hmmm, what is this initial state I see?
+          this.state = {
+            user: {},
+            notes: [],
+          }
+          // needed to bind this to the following methods for later use
+          this.update = this.update.bind(this)
+          this.create = this.create.bind(this)
+          this.destroy = this.destroy.bind(this)
+        }
+
+        // maybe something should be done in this function...?
+        // hmmm, I wonder if the state should be loaded with some stuff...
+        async componentDidMount() {
+            const user = await fetchUser();
+            const notes = axios.get(`${API}/users/${user.id}/notes`);
+            notes.then(res => this.setState({user: user, notes: res.data}));
+        }
+
+        // this should make an axios request to delete a note
+        // AND update the state accordingly
+        async destroy(note) {
+            const remove = axios.delete(`${API}/users/${this.state.user.id}/notes/${note.id}`);
+            this.setState({notes: this.state.notes.filter(item => item.id !== note.id)})
+        }
+
+        // this should make an axios request to update a note
+        // AND update the state & note accordingly with the result of that request
+        async update(note) {
+            const putRequest = axios.put(`${API}/users/${this.state.user.id}/notes/${note.id}`, {archived: note.archived, text: note.text});
+            // this.setState({notes: notes.find((note) => {if(note.id === note.id){ note.text = text; }}) })
+            this.setState({ notes : this.state.notes.map( note => note.id === putRequest.id ? putRequest.data : note)});
+        }
+        // this should make an axios request to create a note
+        // AND update the state with the result of that request
+        async create(note) {
+            const updatedNote = this.state.notes;
+            const post = axios.post(`${API}/users/${this.state.user.id}/notes/`, {archived: false, text: note});
+            post.then(res =>{ 
+                if(!this.state.notes.find(item => item.id === res.data.id)) {
+                    updatedNote.push(res.data);
+                    this.setState({notes: updatedNote})
+                }
+            });
+        }
+
+        // this is all done for you, but like the readme says, make sure you understand what's being done here...
+        render() {
+          const { notes, user } = this.state
+          const { update, create, destroy } = this
+          return (
+            <HashRouter>
+              <Route
+                render={({ location }) => (
+                  <Nav path={location.pathname} notes={notes} />
+                )}
+              />
+              <h1>Acme Note--taker for {user.id ? user.fullName : ""}</h1>
+              <Switch>
+                <Route
+                  exact
+                  path="/notes"
+                  render={() => (
+                    <Notes
+                      destroy={destroy}
+                      // notice how archived is false here
+                      // since we want to show the unarchived notes
+                      archived={false}
+                      notes={notes}
+                      update={update}
+                    />
+                  )}
+                />
+                <Route
+                  path="/notes/create"
+                  render={({ history }) => (
+                    // we give it the history prop here, go read the component comment
+                    // and the created create function to create a note
+                    // heh, see what I did?
+                    <Create history={history} create={create} />
+                  )}
+                />
+                <Route
+                  path="/archived"
+                  render={() => (
+                    <Notes
+                      destroy={destroy}
+                      // notice how HERE, archived is true!
+                      // because we want to show the archived notes only
+                      // look at the path
+                      archived={true}
+                      notes={notes}
+                      update={update}
+                    />
+                  )}
+                />
+                <Redirect to="/notes" />
+              </Switch>
+            </HashRouter>
+          )
+        }
+      }
+      const root = document.querySelector("#root")
+      render(<App />, root)
+    </script>
+  </body>
+</html>
